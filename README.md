@@ -7,9 +7,13 @@ Using an ESP8266 board, paired with an LSM9DS0 Accelerometer/Gyro/Mag sensor (9D
 Authors:
 
 Anthony
+
 Eric
+
 Ke
+
 Robbie
+
 Troy
 
 License: MIT (Pending company approval, I guess?)
