@@ -256,9 +256,13 @@ unsigned long inline ntpUnixTime (WiFiUDP &udp) {
 void setupTimeOffset() {
   char buf[32];
   memset(buf, 0, 32);
+  unsigned long unix_time_sec = 0L;
 
-  Serial.println("Attempting to poll pool.ntp.org for time...");
-  unsigned long unix_time_sec = ntpUnixTime(Udp);
+  do {
+    Serial.println("Attempting to poll pool.ntp.org for time...");
+    unix_time_sec = ntpUnixTime(Udp);
+    delay(250);
+  } while(unix_time_sec < 1);
   Serial.print("Got time: "); Serial.println(unix_time_sec);
   unsigned long long offset_ns = (long long) unix_time_sec * (long long)1000000000L;
   unsigned long long millis_ns = (long long) millis() * 1000000; // yes this is a dumb variable name. fight me.
