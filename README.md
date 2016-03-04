@@ -16,4 +16,4 @@ Robbie
 
 Troy
 
-License: MIT (Pending company approval, I guess?)
+License: GPLv3 (Pending company approval, I guess?)
