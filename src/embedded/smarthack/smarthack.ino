@@ -271,7 +271,6 @@ void setupTimeOffset() {
   int tries = 0;
   unsigned long unix_time_sec = 0L;
   memset(buf, 0, 32);
-  unsigned long unix_time_sec = 0L;
 
   do {
     Serial.println("Attempting to poll pool.ntp.org for time...");
