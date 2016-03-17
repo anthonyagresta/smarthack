@@ -1,4 +1,5 @@
-#include <Adafruit_LSM9DS0.h>
+//#include <Adafruit_LSM9DS0.h>
+#include <Adafruit_LIS3DH.h>
 #include <Adafruit_Sensor.h>
 #include <ESP8266WiFi.h>
 #include <EEPROM.h>
@@ -26,7 +27,7 @@ WiFiUDP Udp;
 
 unsigned long long unix_time_offset_ns = 0;
 
-#define INFLUX_OUTPUT true
+#define JSON_OUTPUT true
 
 #ifdef JSON_OUTPUT
 char udp_buffer[0x100];
@@ -39,7 +40,8 @@ int udp_buffer_size = 0x300;
 #endif
 
 // Init LSM sensor object
-Adafruit_LSM9DS0 lsm = Adafruit_LSM9DS0();
+Adafruit_LIS3DH lis = Adafruit_LIS3DH();
+//Adafruit_LSM9DS0 lsm = Adafruit_LSM9DS0();
 
 void zeroStuffOut() {
   memset(ssid, 0, sizeof(ssid));
@@ -51,9 +53,11 @@ void zeroStuffOut() {
 }
 
 void setupSensor() {
-  lsm.setupAccel(lsm.LSM9DS0_ACCELRANGE_2G);
-  lsm.setupMag(lsm.LSM9DS0_MAGGAIN_2GAUSS);
-  lsm.setupGyro(lsm.LSM9DS0_GYROSCALE_245DPS);
+  lis.setRange(LIS3DH_RANGE_4_G);
+  //lsm.setupAccel(lsm.LSM9DS0_ACCELRANGE_4G);
+  //lsm.setupMag(lsm.LSM9DS0_MAGGAIN_2GAUSS);
+  //lsm.setupGyro(lsm.LSM9DS0_GYROSCALE_245DPS);
+  
 }
 
 void printEEPROM() {
@@ -166,18 +170,27 @@ inline void longLongToStr(long long n, char* pStr) {
 
 
 String buildJSONPacket() {
-  String retval = "{ t: "; retval += millis();
-  retval += ", session: "; retval += session_count;
-  retval += ", ax: "; retval += ((int)lsm.accelData.x);
-  retval += ", ay: "; retval += ((int)lsm.accelData.y);
-  retval += ", az: "; retval += ((int)lsm.accelData.z);
-  retval += ", gx: "; retval += ((int)lsm.gyroData.x);
-  retval += ", gy: "; retval += ((int)lsm.gyroData.y);
-  retval += ", gz: "; retval += ((int)lsm.gyroData.z);
-  retval += ", mx: "; retval += ((int)lsm.magData.x);
-  retval += ", my: "; retval += ((int)lsm.magData.y);
-  retval += ", mz: "; retval += ((int)lsm.magData.z);
-  retval += ", temp: "; retval += ((int)lsm.temperature);
+  long am = (long) sqrt(
+    ((long)lis.x * (long)lis.x) +
+    ((long)lis.y * (long)lis.y) +
+    ((long)lis.z * (long)lis.z)
+  );
+  if(am > 65535L)
+    am = 65535L;
+
+  String retval = "{ \"t\": "; retval += millis();
+  retval += ", \"session\": "; retval += session_count;
+  retval += ", \"ax\": "; retval += ((int)lis.x);
+  retval += ", \"ay\": "; retval += ((int)lis.y);
+  retval += ", \"az\": "; retval += ((int)lis.z);
+  retval += ", \"am\": "; retval += am;
+  //retval += ", gx: "; retval += ((int)lsm.gyroData.x);
+  //retval += ", gy: "; retval += ((int)lsm.gyroData.y);
+  //retval += ", gz: "; retval += ((int)lsm.gyroData.z);
+  //retval += ", mx: "; retval += ((int)lsm.magData.x);
+  //retval += ", my: "; retval += ((int)lsm.magData.y);
+  //retval += ", mz: "; retval += ((int)lsm.magData.z);
+  //retval += ", temp: "; retval += ((int)lsm.temperature);
   retval += " }\n";
   return retval;
 }
@@ -255,15 +268,17 @@ unsigned long inline ntpUnixTime (WiFiUDP &udp) {
 
 void setupTimeOffset() {
   char buf[32];
+  int tries = 0;
+  unsigned long unix_time_sec = 0L;
   memset(buf, 0, 32);
   unsigned long unix_time_sec = 0L;
 
   do {
     Serial.println("Attempting to poll pool.ntp.org for time...");
-    unix_time_sec = ntpUnixTime(Udp);
-    delay(250);
-  } while(unix_time_sec < 1);
-  Serial.print("Got time: "); Serial.println(unix_time_sec);
+     unix_time_sec = ntpUnixTime(Udp);
+    Serial.print("Got time: "); Serial.println(unix_time_sec);
+  } while (unix_time_sec == 0 && 5 > tries++);
+  
   unsigned long long offset_ns = (long long) unix_time_sec * (long long)1000000000L;
   unsigned long long millis_ns = (long long) millis() * 1000000; // yes this is a dumb variable name. fight me.
   unix_time_offset_ns = offset_ns - millis_ns;
@@ -290,16 +305,16 @@ String buildInfluxPacket() {
   
   // Holy string concatenation, Batman!
   String retval = "";
-  retval += "ax,"; retval += session_tag; retval += " value="; retval += ((int)lsm.accelData.x); retval += "i "; retval += timestamp; retval += "\n";
-  retval += "ay,"; retval += session_tag; retval += " value="; retval += ((int)lsm.accelData.y); retval += "i "; retval += timestamp; retval += "\n";
-  retval += "az,"; retval += session_tag; retval += " value="; retval += ((int)lsm.accelData.z); retval += "i "; retval += timestamp; retval += "\n";
-  retval += "gx,"; retval += session_tag; retval += " value="; retval += ((int)lsm.gyroData.x); retval += "i "; retval += timestamp; retval += "\n";
-  retval += "gy,"; retval += session_tag; retval += " value="; retval += ((int)lsm.gyroData.y); retval += "i "; retval += timestamp; retval += "\n";
-  retval += "gz,"; retval += session_tag; retval += " value="; retval += ((int)lsm.gyroData.z); retval += "i "; retval += timestamp; retval += "\n";
-  retval += "mx,"; retval += session_tag; retval += " value="; retval += ((int)lsm.magData.x); retval += "i "; retval += timestamp; retval += "\n";
-  retval += "my,"; retval += session_tag; retval += " value="; retval += ((int)lsm.magData.y); retval += "i "; retval += timestamp; retval += "\n";
-  retval += "mz,"; retval += session_tag; retval += " value="; retval += ((int)lsm.magData.z); retval += "i "; retval += timestamp; retval += "\n";
-  retval += "temp,"; retval += session_tag; retval += " value="; retval += ((int)lsm.temperature); retval += "i "; retval += timestamp; retval += "\n";
+  retval += "ax,"; retval += session_tag; retval += " value="; retval += ((int)lis.x); retval += "i "; retval += timestamp; retval += "\n";
+  retval += "ay,"; retval += session_tag; retval += " value="; retval += ((int)lis.y); retval += "i "; retval += timestamp; retval += "\n";
+  retval += "az,"; retval += session_tag; retval += " value="; retval += ((int)lis.z); retval += "i "; retval += timestamp; retval += "\n";
+  //retval += "gx,"; retval += session_tag; retval += " value="; retval += ((int)lsm.gyroData.x); retval += "i "; retval += timestamp; retval += "\n";
+  //retval += "gy,"; retval += session_tag; retval += " value="; retval += ((int)lsm.gyroData.y); retval += "i "; retval += timestamp; retval += "\n";
+  //retval += "gz,"; retval += session_tag; retval += " value="; retval += ((int)lsm.gyroData.z); retval += "i "; retval += timestamp; retval += "\n";
+  //retval += "mx,"; retval += session_tag; retval += " value="; retval += ((int)lsm.magData.x); retval += "i "; retval += timestamp; retval += "\n";
+  //retval += "my,"; retval += session_tag; retval += " value="; retval += ((int)lsm.magData.y); retval += "i "; retval += timestamp; retval += "\n";
+  //retval += "mz,"; retval += session_tag; retval += " value="; retval += ((int)lsm.magData.z); retval += "i "; retval += timestamp; retval += "\n";
+  //retval += "temp,"; retval += session_tag; retval += " value="; retval += ((int)lsm.temperature); retval += "i "; retval += timestamp; retval += "\n";
   return retval;
 }
 
@@ -326,23 +341,21 @@ void setup() {
   Serial.begin(115200);
   zeroStuffOut();
   pinMode(0, INPUT);
-  if (!lsm.begin()) {
-    Serial.println("Unable to initialize the LSM9DS0. Check your wiring!");
+  if (!lis.begin(0x18)) {
+    Serial.println("Unable to initialize the LIS3DH. Check your wiring!");
     delay(999999999);
   }
-  Serial.println("Found LSM9DS0 9DOF");
+  Serial.println("Found LIS3DH accelerometer");
   Serial.println("");
   EEPROM.begin(512);
   // Do this once to get the values into EEPROM
-  /*
-  setConfig(
-    "YOUR_SSID",
-    "YOUR_PASSWD",
-    "YOUR_HOSTNAME",
-    1234,
-    0
-  );
-  */
+//  setConfig(
+//    "YourSSID",
+//    "YourWiFiPassword",
+//    "127.0.0.1", // server with UDP listener
+//    1234, // UDP port
+//    0 // Session count
+//  );
   getConfig();
   session_count++;
   writeIntToEEPROM(session_count, 0xD0);
@@ -356,13 +369,15 @@ void loop() {
   Serial.print("UDP target host: "); Serial.print(udp_hostname); Serial.print(":"); Serial.println(udp_port);
   //Serial.println("Starting sensor loop");
   while(digitalRead(0) == HIGH) {
-    lsm.read();
+    lis.read();
     #ifdef JSON_OUTPUT
     buildJSONPacket().toCharArray(udp_buffer, udp_buffer_size);
     #endif
     #ifdef INFLUX_OUTPUT
     buildInfluxPacket().toCharArray(udp_buffer, udp_buffer_size);
     #endif
+    if(WiFi.status() != WL_CONNECTED)
+      connectToWifi(ssid, passwd);
     Udp.beginPacket(udp_hostname, udp_port);
     Udp.write(udp_buffer);
     Udp.endPacket();
